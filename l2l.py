@@ -30,13 +30,14 @@ def load_data():
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.encoder = BertModel.from_pretrained('bert-base-chinese')
-        self.classifier = nn.Linear(768, 15)
+        self.inner = nn.Linear(768, 200)
+        self.classifier = nn.Linear(200, 15)
 
 
 
     def forward(self, x):
-        x = self.encoder(x)[1]
+        x = self.inner(x)
+        x = F.relu(x)
         o = self.classifier(x)
         return F.dropout(o, p=0.5)
 
@@ -47,8 +48,9 @@ class Trainer:
         model = Net()
         self.loss_fn = nn.CrossEntropyLoss()
         model.to(device)
-        self.meta_model = l2l.algorithms.MAML(model, lr=1e-3, first_order=True)
-        self.optim = AdamW(self.meta_model.parameters(), lr=3e-5)
+        self.encoder = BertModel.from_pretrained('bert-base-chinese')
+        self.meta_model = l2l.algorithms.MAML(model, lr=1e-2, first_order=True)
+        self.optim = AdamW(self.meta_model.parameters(), lr=5e-3)
         # text_train = l2l.text.datasets.NewsClassification(root=download_location, download=True)
         # train_gen = l2l.text.datasets.TaskGenerator(text_train, ways=ways)
         X, Y = load_data()
@@ -68,12 +70,15 @@ class Trainer:
         acc = 0.
         for i, (x,y) in enumerate(dl):
             x, y = x.to(device), y.long().to(device)
+            self.encoder.eval()
+            with T.no_grad():
+                x = self.encoder(x)[1]
             out = learner(x)
             l = self.loss_fn(out, y)
             loss += l
             acc += self.accuracy(out, y)
+
         loss /= len(task)
-        print(loss)
         acc /= len(dl)
         print(acc)
         return loss, acc
